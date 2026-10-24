@@ -6,10 +6,11 @@
   "scripts": {
     "dev": "vite",
     "dev:api": "tsx watch server/index.ts",
-    "build": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json && vite build",
+    "build": "prisma generate && tsc --noEmit && tsc --noEmit -p tsconfig.server.json && vite build",
     "build:api": "tsc -p tsconfig.server.json",
     "start:api": "node dist-server/index.js",
     "typecheck:api": "tsc --noEmit -p tsconfig.server.json",
+    "postinstall": "prisma generate",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy"
   },
