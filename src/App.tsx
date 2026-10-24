@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Activity, ArrowDown, ArrowLeft, ArrowRight, AudioLines, Bookmark, Check, ChevronDown, CircleHelp, Code2, Copy, Cpu, FileText, FlaskConical, GitFork, Globe2, Layers3, Link2, LoaderCircle, LockKeyhole, Menu, Mic, MoreHorizontal, PanelLeftClose, Pause, Paperclip, Plus, Search, Send, Settings2, Shield, Sparkles, SquarePen, Terminal, Volume2, X } from 'lucide-react';
+import { Activity, ArrowDown, ArrowLeft, ArrowRight, AudioLines, Bookmark, Check, ChevronDown, CircleHelp, Code2, Copy, Cpu, FileText, FlaskConical, GitFork, Globe2, Layers3, Link2, LoaderCircle, LockKeyhole, Menu, Mic, MoreHorizontal, PanelLeftClose, Pause, Paperclip, Pencil, Plus, Search, Send, Settings2, Shield, Sparkles, SquarePen, Terminal, Trash2, Volume2, X } from 'lucide-react';
 
 type Message = { role: 'user' | 'assistant'; content: string };
 type Memory = { name: string; role: string; tone: string; context: string };
@@ -32,6 +32,7 @@ function AiraExperience() {
   const [memory, setMemory] = useState<Memory>(() => { try { return { ...initialMemory, ...JSON.parse(localStorage.getItem('aira-profile') || '{}') }; } catch { return initialMemory; } });
   const [modal, setModal] = useState(false); const [sidebar, setSidebar] = useState(true); const [model, setModel] = useState('GPT-4o'); const [modelOpen, setModelOpen] = useState(false);
   const [input, setInput] = useState(''); const [messages, setMessages] = useState<Message[]>([]); const [conversationId, setConversationId] = useState(''); const [busy, setBusy] = useState(false); const [activity, setActivity] = useState(''); const [transcript, setTranscript] = useState(''); const [mic, setMic] = useState(false); const [paused, setPaused] = useState(false); const [audioLevel, setAudioLevel] = useState(0); const [copied, setCopied] = useState<number | null>(null); const [history, setHistory] = useState<Array<{id:string;title:string}>>([]); const [token, setToken] = useState(() => localStorage.getItem('aira-token') || ''); const [authOpen, setAuthOpen] = useState(false); const [register, setRegister] = useState(true); const [authForm, setAuthForm] = useState({ email: '', password: '', name: '' }); const [queuedMessage, setQueuedMessage] = useState(''); const [authError, setAuthError] = useState('');
+  const [editingChatId, setEditingChatId] = useState<string | null>(null); const [editingTitle, setEditingTitle] = useState(''); const [chatSearch, setChatSearch] = useState(''); const [searchActive, setSearchActive] = useState(false);
   const feed = useRef<HTMLDivElement>(null); const inputRef = useRef<HTMLTextAreaElement>(null); const recognition = useRef<any>(null); const audioContext = useRef<AudioContext|null>(null); const audioStream = useRef<MediaStream|null>(null); const audioFrame = useRef<number>(0);
   useEffect(() => { feed.current?.scrollTo({ top: feed.current.scrollHeight, behavior: 'smooth' }); }, [messages, activity]);
   useEffect(() => { fetch('/api/health').then(response => response.ok ? response.json() : null).then(data => { if (data?.configuredProviders?.groq) setModel(current => current === 'GPT-4o' ? 'GPT OSS 20B · Groq' : current); }).catch(() => {}); }, []);
@@ -50,6 +51,8 @@ function AiraExperience() {
   }
   async function authenticate(e: React.FormEvent) { e.preventDefault();setAuthError('');try{const response=await fetch(`/api/v1/auth/${register?'register':'login'}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(register?authForm:{email:authForm.email,password:authForm.password})});const data=await readApiJson(response);localStorage.setItem('aira-token',data.token);setToken(data.token);if(data.user?.name){const next={...memory,name:data.user.name};setMemory(next);localStorage.setItem('aira-profile',JSON.stringify(next));}setAuthOpen(false);if(queuedMessage){const message=queuedMessage;setQueuedMessage('');setTimeout(()=>sendMessage(message),0);}}catch(error){setAuthError(error instanceof Error?error.message:'Sign in failed.');}}
   async function openConversation(id:string){if(!token)return;try{const response=await fetch(`/api/v1/conversations/${id}`,{headers:{Authorization:`Bearer ${token}`}});const data=await readApiJson(response);setConversationId(id);setMessages(data.conversation.messages.map((message:{role:string;content:string})=>({role:message.role==='assistant'?'assistant':'user',content:message.content})));setScreen('chat');}catch(error){setAuthError(error instanceof Error?error.message:'Could not load this conversation.');}}
+  async function renameChat(id: string, newTitle: string) { const trimmed = newTitle.trim(); if (!trimmed || !token) { setEditingChatId(null); return; } setHistory(prev => prev.map(c => c.id === id ? { ...c, title: trimmed } : c)); setEditingChatId(null); try { await fetch(`/api/v1/conversations/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ title: trimmed }) }).then(readApiJson); } catch (error) { setAuthError(error instanceof Error ? error.message : 'Could not rename chat.'); } }
+  async function deleteChat(id: string, e?: React.MouseEvent) { e?.stopPropagation(); if (!token) return; if (!confirm('Are you sure you want to delete this chat?')) return; setHistory(prev => prev.filter(c => c.id !== id)); if (conversationId === id) { setConversationId(''); setMessages([]); setScreen('home'); } try { await fetch(`/api/v1/conversations/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }); } catch (error) { setAuthError(error instanceof Error ? error.message : 'Could not delete chat.'); } }
   function startVoice() { setScreen('voice'); setTranscript(''); setPaused(false); void startAudioMeter(); const SpeechRecognition = window.SpeechRecognition || (window as any).webkitSpeechRecognition; if (!SpeechRecognition) { setTranscript('Live transcription is unavailable in this browser. Try Chrome or Edge.'); return; } const engine = new SpeechRecognition(); recognition.current = engine; engine.continuous = true; engine.interimResults = true; engine.onresult = (event: any) => { let text = ''; for (let i = 0; i < event.results.length; i++) text += event.results[i][0].transcript; setTranscript(text); }; engine.onerror = () => setTranscript(current => current || 'Microphone access was unavailable. Check your browser permissions.'); engine.onend = () => {setMic(false);stopAudioMeter();}; engine.start(); setMic(true); }
   function closeScreen() { recognition.current?.stop(); stopAudioMeter(); setMic(false); setScreen('home'); }
 
@@ -58,7 +61,43 @@ function AiraExperience() {
       <button className="new-chat" onClick={() => { setMessages([]);setConversationId('');setScreen('home'); }}><SquarePen size={16}/> <span>New chat</span><kbd>⌘ K</kbd></button>
       <button className="nav-item active"><Sparkles size={16}/><span>Assistant</span></button><button className="nav-item"><Bookmark size={16}/><span>Saved</span></button>
       <div className="side-section"><span className="section-title">YOUR WORKSPACE</span><button className="workspace"><span className="workspace-icon">◈</span><span>Personal workspace</span><ChevronDown size={14}/></button></div>
-      <div className="side-section history-section"><div className="history-heading"><span className="section-title">RECENT CHATS</span><button className="icon-btn" aria-label="Search chats"><Search size={14}/></button></div>{history.map(item => <button key={item.id} className="history-item" onClick={() => void openConversation(item.id)}><span className="history-dot"/>{item.title}</button>)}</div>
+      <div className="side-section history-section">
+        <div className="history-heading">
+          <span className="section-title">RECENT CHATS</span>
+          <button className="icon-btn" onClick={() => setSearchActive(!searchActive)} title="Search chats" aria-label="Search chats"><Search size={14}/></button>
+        </div>
+        {searchActive && (
+          <div className="history-search-wrap">
+            <input className="history-search-input" placeholder="Filter chats..." value={chatSearch} onChange={e => setChatSearch(e.target.value)} autoFocus/>
+            {chatSearch && <button className="icon-btn search-clear" onClick={() => setChatSearch('')} aria-label="Clear"><X size={12}/></button>}
+          </div>
+        )}
+        <div className="history-list">
+          {history.filter(item => !chatSearch || item.title.toLowerCase().includes(chatSearch.toLowerCase())).map(item => (
+            <div key={item.id} className={`history-row ${conversationId === item.id ? 'active' : ''}`}>
+              {editingChatId === item.id ? (
+                <form className="history-edit-form" onSubmit={e => { e.preventDefault(); void renameChat(item.id, editingTitle); }}>
+                  <input className="history-edit-input" value={editingTitle} onChange={e => setEditingTitle(e.target.value)} autoFocus onKeyDown={e => { if (e.key === 'Escape') setEditingChatId(null); }}/>
+                  <button className="history-action-btn check" type="submit" title="Save" aria-label="Save title"><Check size={12}/></button>
+                  <button className="history-action-btn cancel" type="button" onClick={() => setEditingChatId(null)} title="Cancel" aria-label="Cancel"><X size={12}/></button>
+                </form>
+              ) : (
+                <>
+                  <button className={`history-item ${conversationId === item.id ? 'active' : ''}`} onClick={() => void openConversation(item.id)} title={item.title}>
+                    <span className={`history-dot ${conversationId === item.id ? 'active-dot' : ''}`}/>
+                    <span className="history-title">{item.title}</span>
+                  </button>
+                  <div className="history-actions">
+                    <button className="history-action-btn" onClick={e => { e.stopPropagation(); setEditingChatId(item.id); setEditingTitle(item.title); }} title="Rename chat" aria-label="Rename chat"><Pencil size={12}/></button>
+                    <button className="history-action-btn delete" onClick={e => void deleteChat(item.id, e)} title="Delete chat" aria-label="Delete chat"><Trash2 size={12}/></button>
+                  </div>
+                </>
+              )}
+            </div>
+          ))}
+          {history.length === 0 && <div className="history-empty">No conversations yet</div>}
+        </div>
+      </div>
       <div className="side-bottom"><button className="nav-item" onClick={() => setModal(true)}><Settings2 size={16}/><span>Preferences</span></button><button className="upgrade"><span className="upgrade-icon"><Sparkles size={14}/></span><span><strong>Make Aira yours</strong><small>Personalize your assistant</small></span><ArrowRight size={15}/></button><button className="user-profile" onClick={() => setModal(true)}><div className="avatar">{memory.name.slice(0,1).toUpperCase()}</div><span className="profile-text"><strong>{memory.name} Parker</strong><small>Personal plan</small></span><MoreHorizontal size={17}/></button></div>
     </aside>
     <main className="main">
