@@ -24,8 +24,35 @@ const google = process.env.GOOGLE_AI_API_KEY ? new GoogleGenerativeAI(process.en
 
 app.disable('x-powered-by'); app.set('trust proxy', process.env.TRUST_PROXY === '1' ? 1 : false);
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
-const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173').split(',').map(s => s.trim());
-app.use(cors({ origin(origin, callback) { if (!origin || allowedOrigins.includes(origin)) callback(null, true); else callback(new Error('Origin is not allowed by CORS')); }, credentials: true, methods: ['GET','POST','PATCH','DELETE','OPTIONS'], allowedHeaders: ['Content-Type','Authorization'] }));
+const configuredOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173').split(',').map(s => s.trim()).filter(Boolean);
+function isOriginAllowed(origin?: string, host?: string): boolean {
+  if (!origin) return true;
+  if (configuredOrigins.includes('*')) return true;
+  if (configuredOrigins.includes(origin)) return true;
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return true;
+  if (/^https:\/\/([a-zA-Z0-9-]+\.)*vercel\.app$/.test(origin)) return true;
+  if (process.env.VERCEL_URL && origin === `https://${process.env.VERCEL_URL}`) return true;
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL && origin === `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`) return true;
+  if (host) {
+    try {
+      if (new URL(origin).host === host) return true;
+    } catch {
+      // ignore
+    }
+  }
+  return false;
+}
+app.use(cors((req, callback) => {
+  const origin = req.headers.origin as string | undefined;
+  const host = req.headers.host;
+  const allowed = isOriginAllowed(origin, host);
+  callback(null, {
+    origin: allowed ? (origin || true) : false,
+    credentials: true,
+    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+  });
+}));
 app.use(express.json({ limit: '1mb' })); app.use(rateLimit({ windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS || 60_000), limit: Number(process.env.RATE_LIMIT_MAX || 60), standardHeaders: 'draft-8', legacyHeaders: false }));
 type AuthRequest = Request & { userId?: string };
 const asyncRoute = (fn: (req: AuthRequest, res: Response, next: NextFunction) => Promise<unknown>) => (req: Request, res: Response, next: NextFunction) => Promise.resolve(fn(req as AuthRequest, res, next)).catch(next);
