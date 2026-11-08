@@ -58,26 +58,41 @@ type AuthRequest = Request & { userId?: string };
 const asyncRoute = (fn: (req: AuthRequest, res: Response, next: NextFunction) => Promise<unknown>) => (req: Request, res: Response, next: NextFunction) => Promise.resolve(fn(req as AuthRequest, res, next)).catch(next);
 async function auth(req: AuthRequest, res: Response, next: NextFunction) {
   const raw = req.headers.authorization;
-  if (!raw?.startsWith('Bearer ')) {
-    res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'A valid bearer token is required.' } });
-    return;
+  let sub: string | null = null;
+  if (raw?.startsWith('Bearer ')) {
+    try {
+      const payload = jwt.verify(raw.slice(7), jwtSecret, { issuer:'aira-api', audience:'aira-client', algorithms:['HS256'] }) as jwt.JwtPayload;
+      if (typeof payload.sub === 'string') {
+        const user = await prisma.user.findUnique({ where: { id: payload.sub }, select: { id: true } });
+        if (user) {
+          sub = user.id;
+        }
+      }
+    } catch {}
   }
-  let sub = '';
-  try {
-    const payload = jwt.verify(raw.slice(7), jwtSecret, { issuer:'aira-api', audience:'aira-client', algorithms:['HS256'] }) as jwt.JwtPayload;
-    if (typeof payload.sub !== 'string') throw new Error('Invalid subject');
-    sub = payload.sub;
-  } catch {
-    res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Your session is invalid or expired.' } });
-    return;
-  }
-  try {
-    const user = await prisma.user.findUnique({ where: { id: sub }, select: { id: true } });
-    if (!user) {
-      res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Your session is invalid or expired.' } });
+  if (!sub) {
+    try {
+      const guestHex = Math.random().toString(36).slice(2, 9);
+      const email = `guest_${Date.now()}_${guestHex}@guest.aira.local`;
+      const passwordHash = await bcrypt.hash(guestHex, 10);
+      const guestUser = await prisma.user.create({
+        data: {
+          email,
+          name: 'Friend',
+          passwordHash,
+          profile: { create: { displayName: 'Friend', tone: 'Warm & Thoughtful' } }
+        },
+        select: { id: true }
+      });
+      sub = guestUser.id;
+      const freshToken = tokenFor(sub);
+      res.setHeader('X-Aira-Token', freshToken);
+      res.setHeader('Access-Control-Expose-Headers', 'X-Aira-Token');
+    } catch {
+      res.status(503).json({ error: { code: 'DATABASE_UNAVAILABLE', message: 'Could not initialize session.' } });
       return;
     }
-  } catch {}
+  }
   req.userId = sub;
   next();
 }
