@@ -56,7 +56,31 @@ app.use(cors((req, callback) => {
 app.use(express.json({ limit: '1mb' })); app.use(rateLimit({ windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS || 60_000), limit: Number(process.env.RATE_LIMIT_MAX || 60), standardHeaders: 'draft-8', legacyHeaders: false }));
 type AuthRequest = Request & { userId?: string };
 const asyncRoute = (fn: (req: AuthRequest, res: Response, next: NextFunction) => Promise<unknown>) => (req: Request, res: Response, next: NextFunction) => Promise.resolve(fn(req as AuthRequest, res, next)).catch(next);
-function auth(req: AuthRequest, res: Response, next: NextFunction) { const raw = req.headers.authorization; if (!raw?.startsWith('Bearer ')) { res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'A valid bearer token is required.' } }); return; } try { const payload = jwt.verify(raw.slice(7), jwtSecret, { issuer:'aira-api', audience:'aira-client', algorithms:['HS256'] }) as jwt.JwtPayload; if (typeof payload.sub !== 'string') throw new Error('Invalid subject'); req.userId = payload.sub; next(); } catch { res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Your session is invalid or expired.' } }); } }
+async function auth(req: AuthRequest, res: Response, next: NextFunction) {
+  const raw = req.headers.authorization;
+  if (!raw?.startsWith('Bearer ')) {
+    res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'A valid bearer token is required.' } });
+    return;
+  }
+  let sub = '';
+  try {
+    const payload = jwt.verify(raw.slice(7), jwtSecret, { issuer:'aira-api', audience:'aira-client', algorithms:['HS256'] }) as jwt.JwtPayload;
+    if (typeof payload.sub !== 'string') throw new Error('Invalid subject');
+    sub = payload.sub;
+  } catch {
+    res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Your session is invalid or expired.' } });
+    return;
+  }
+  try {
+    const user = await prisma.user.findUnique({ where: { id: sub }, select: { id: true } });
+    if (!user) {
+      res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Your session is invalid or expired.' } });
+      return;
+    }
+  } catch {}
+  req.userId = sub;
+  next();
+}
 function requireDatabase(_req:Request,res:Response,next:NextFunction){if(!process.env.DATABASE_URL){res.status(503).json({error:{code:'DATABASE_UNAVAILABLE',message:'Aira storage is not configured. Add a PostgreSQL DATABASE_URL to the Vercel project to enable accounts, conversations, and memory.'}});return;}next();}
 const userId = (req: AuthRequest) => req.userId!;
 const registerSchema = z.object({ email: z.string().email().max(254), password: z.string().min(10).max(128), name: z.string().trim().min(1).max(80) });
