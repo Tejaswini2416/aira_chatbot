@@ -69,8 +69,8 @@ Follow these steps to run the application locally on your machine.
 
 ```bash
 # Clone the repository
-git clone https://github.com/Tejaswini2416/personalized_chatbot.git
-cd personalized_chatbot
+git clone https://github.com/Tejaswini2416/aira_chatbot.git
+cd aira_chatbot
 
 # Install dependencies
 npm install
