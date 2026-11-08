@@ -296,3 +296,140 @@
 .app.light-mode .bottom-note{
   color:#8a837c;
 }
+
+/* Multi-Platform View Switcher */
+.platform-switcher{display:inline-flex;align-items:center;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:20px;padding:2px 3px;gap:2px}
+.platform-btn{display:inline-flex;align-items:center;gap:5px;border:0;background:transparent;color:#918a86;font-size:10px;font-weight:500;padding:4px 9px;border-radius:16px;transition:all 0.18s;cursor:pointer}
+.platform-btn:hover{color:#ffffff;background:rgba(255,255,255,0.06)}
+.platform-btn.active{background:linear-gradient(135deg,rgba(255,116,61,0.22),rgba(255,90,40,0.12));color:#ff8e5e;border:1px solid rgba(255,116,61,0.35);font-weight:600;box-shadow:0 2px 8px rgba(255,116,61,0.15)}
+
+.app.light-mode .platform-switcher{background:rgba(0,0,0,0.04);border-color:rgba(0,0,0,0.08)}
+.app.light-mode .platform-btn{color:#6b645f}
+.app.light-mode .platform-btn:hover{color:#1c1917;background:rgba(0,0,0,0.06)}
+.app.light-mode .platform-btn.active{background:rgba(255,116,61,0.12);color:#d94d1a;border-color:rgba(255,116,61,0.25)}
+
+/* Simulated Multi-Platform Device Viewports */
+.platform-viewport-wrapper{width:100%;min-height:calc(100vh - 61px);transition:all 0.3s ease}
+.platform-viewport-wrapper.simulator-active{
+  padding:20px 10px 40px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  background:radial-gradient(ellipse at center, rgba(255,116,61,0.04), transparent 70%);
+}
+.platform-viewport-wrapper.platform-tablet .platform-content-inner{
+  width:100%;
+  max-width:768px;
+  min-height:920px;
+  background:var(--bg, #0b0807);
+  border:1px solid rgba(255,255,255,0.14);
+  border-radius:24px;
+  box-shadow:0 24px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.05);
+  overflow:hidden;
+  position:relative;
+}
+.platform-viewport-wrapper.platform-mobile .platform-content-inner{
+  width:100%;
+  max-width:390px;
+  min-height:820px;
+  background:var(--bg, #0b0807);
+  border:2px solid rgba(255,255,255,0.15);
+  border-radius:38px;
+  box-shadow:0 30px 90px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.06);
+  overflow:hidden;
+  position:relative;
+}
+.app.light-mode .platform-viewport-wrapper.platform-tablet .platform-content-inner,
+.app.light-mode .platform-viewport-wrapper.platform-mobile .platform-content-inner{
+  background:#faf7f4;
+  border-color:rgba(0,0,0,0.14);
+  box-shadow:0 24px 60px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.05);
+}
+
+.device-frame-header{
+  width:100%;
+  max-width:390px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:8px;
+  margin-bottom:12px;
+}
+.platform-viewport-wrapper.platform-tablet .device-frame-header{
+  max-width:768px;
+}
+.device-speaker-notch{
+  width:110px;
+  height:24px;
+  background:#1a1715;
+  border-radius:0 0 14px 14px;
+  border:1px solid rgba(255,255,255,0.08);
+  border-top:0;
+  box-shadow:inset 0 -2px 6px rgba(0,0,0,0.5);
+}
+.app.light-mode .device-speaker-notch{
+  background:#e5ded7;
+  border-color:rgba(0,0,0,0.08);
+}
+.device-info-badge{
+  display:inline-flex;
+  align-items:center;
+  gap:10px;
+  background:rgba(255,255,255,0.05);
+  border:1px solid rgba(255,255,255,0.08);
+  border-radius:20px;
+  padding:4px 12px;
+  font-size:10px;
+  color:#a8a09a;
+}
+.app.light-mode .device-info-badge{
+  background:rgba(0,0,0,0.05);
+  border-color:rgba(0,0,0,0.08);
+  color:#615953;
+}
+.device-exit-btn{
+  border:0;
+  background:rgba(255,116,61,0.15);
+  color:#ff9b6c;
+  font-size:9px;
+  font-weight:600;
+  padding:2px 8px;
+  border-radius:10px;
+  cursor:pointer;
+  transition:all 0.18s;
+}
+.device-exit-btn:hover{
+  background:rgba(255,116,61,0.25);
+  color:#ffa87d;
+}
+.device-home-bar{
+  width:125px;
+  height:4px;
+  background:rgba(255,255,255,0.3);
+  border-radius:4px;
+  margin-top:14px;
+}
+.app.light-mode .device-home-bar{
+  background:rgba(0,0,0,0.25);
+}
+
+.platform-viewport-wrapper.platform-mobile .home-view,
+.platform-viewport-wrapper.platform-mobile .chat-view{
+  padding:20px 14px 16px;
+  height:100%;
+}
+.platform-viewport-wrapper.platform-mobile .greeting h1{
+  font-size:24px;
+}
+.platform-viewport-wrapper.platform-mobile .suggestion-grid{
+  grid-template-columns:1fr;
+}
+.platform-viewport-wrapper.platform-tablet .home-view,
+.platform-viewport-wrapper.platform-tablet .chat-view{
+  padding:24px 20px 20px;
+}
+
+@media(max-width:800px){
+  .platform-btn span{display:none}
+  .platform-btn{padding:4px 6px}
+}

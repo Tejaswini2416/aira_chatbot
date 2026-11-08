@@ -191,7 +191,47 @@ async function makeSystemPrompt(uid: string, memoryEnabled: boolean, query: stri
 }
 const toolDefinitions: OpenAI.Chat.Completions.ChatCompletionTool[] = [{type:'function',function:{name:'web_search',description:'Search the web for current public information. Use only when fresh facts are needed.',parameters:{type:'object',properties:{query:{type:'string'}},required:['query'],additionalProperties:false}}},{type:'function',function:{name:'run_code',description:'Run a short JavaScript calculation or transform provided data. Never run arbitrary system commands.',parameters:{type:'object',properties:{code:{type:'string'}},required:['code'],additionalProperties:false}}}];
 async function executeTool(name:string,args:Record<string,unknown>) { if(name==='web_search') return {status:'unavailable',message:'No web search connector is configured on this server.'}; if(name==='run_code') return {status:'blocked',message:'A sandboxed code execution service is not configured. Do not evaluate this code in the API process.'}; return {status:'error',message:'Unknown tool'}; }
-async function streamOpenAI(client:OpenAI,model:string,messages:OpenAI.Chat.Completions.ChatCompletionMessageParam[],emit:(event:unknown)=>void){const history=[...messages];let answer='';for(let step=0;step<4;step++){const stream=await (async()=>{try{return await client.chat.completions.create({model,messages:history,stream:true,tools:toolDefinitions,tool_choice:'auto'});}catch(error){const issue=error as {status?:unknown;code?:unknown;error?:{code?:unknown;type?:unknown}};const code=typeof issue.code==='string'?issue.code:typeof issue.error?.code==='string'?issue.error.code:'';const type=typeof issue.error?.type==='string'?issue.error.type:'';const quota=issue.status===429||code==='insufficient_quota'||code==='credit_balance_exhausted'||type==='insufficient_quota';if(client!==openai||!groq||!quota)throw error;emit({type:'status',message:'OpenAI is at its usage limit. Switching to Groq...'});return groq.chat.completions.create({model:process.env.GROQ_MODEL||'openai/gpt-oss-20b',messages:history,stream:true,tools:toolDefinitions,tool_choice:'auto'});}})();const calls=new Map<number,{id:string,name:string,args:string}>();let stepText='';for await(const chunk of stream){const delta=chunk.choices[0]?.delta;if(!delta)continue;if(delta.content){stepText+=delta.content;answer+=delta.content;emit({type:'content',text:delta.content});}for(const tc of delta.tool_calls||[]){let call=calls.get(tc.index);if(!call){call={id:tc.id||'',name:tc.function?.name||'',args:''};calls.set(tc.index,call);}if(tc.id)call.id=tc.id;if(tc.function?.name)call.name=tc.function.name;if(tc.function?.arguments)call.args+=tc.function.arguments;}}if(!calls.size)return answer;if(step===3){emit({type:'status',message:'Agent step limit reached'});return answer||'I reached the safe limit for tool actions. Please narrow the request and try again.';}const toolCalls=Array.from(calls.values()).map(call=>({id:call.id,type:'function' as const,function:{name:call.name,arguments:call.args}}));history.push({role:'assistant',content:stepText||null,tool_calls:toolCalls});for(const call of calls.values()){emit({type:'status',message:`Executing agent task: ${call.name}`});let args:Record<string,unknown>={};try{args=JSON.parse(call.args);}catch{}const result=await executeTool(call.name,args);emit({type:'tool_result',tool:call.name,result});history.push({role:'tool',tool_call_id:call.id,content:JSON.stringify(result)});}}return answer;}
+async function streamOpenAI(client:OpenAI,model:string,messages:OpenAI.Chat.Completions.ChatCompletionMessageParam[],emit:(event:unknown)=>void){
+  const history=[...messages];
+  let answer='';
+  try {
+    const stream = await client.chat.completions.create({
+      model,
+      messages: history,
+      stream: true
+    });
+    for await (const chunk of stream) {
+      const delta = chunk.choices[0]?.delta;
+      if (!delta) continue;
+      if (delta.content) {
+        answer += delta.content;
+        emit({ type: 'content', text: delta.content });
+      }
+    }
+    return answer;
+  } catch (error) {
+    const issue = error as { status?: unknown; code?: unknown; error?: { code?: unknown; type?: unknown } };
+    const code = typeof issue.code === 'string' ? issue.code : typeof issue.error?.code === 'string' ? issue.error.code : '';
+    const type = typeof issue.error?.type === 'string' ? issue.error.type : '';
+    const quota = issue.status === 429 || code === 'insufficient_quota' || code === 'credit_balance_exhausted' || type === 'insufficient_quota';
+    if (client !== openai || !groq || !quota) throw error;
+    emit({ type: 'status', message: 'OpenAI is at its usage limit. Switching to Groq...' });
+    const fallbackStream = await groq.chat.completions.create({
+      model: process.env.GROQ_MODEL || 'openai/gpt-oss-20b',
+      messages: history,
+      stream: true
+    });
+    for await (const chunk of fallbackStream) {
+      const delta = chunk.choices[0]?.delta;
+      if (!delta) continue;
+      if (delta.content) {
+        answer += delta.content;
+        emit({ type: 'content', text: delta.content });
+      }
+    }
+    return answer;
+  }
+}
 app.post('/api/v1/chat/completions', auth, requireDatabase, asyncRoute(async (req,res) => { const input = chatSchema.parse(req.body); const uid = userId(req); const profile = await prisma.profile.findUnique({where:{userId:uid}}); const system = await makeSystemPrompt(uid,input.memoryEnabled && (profile?.memoryEnabled ?? true),input.message); const conversation = input.conversationId ? await prisma.conversation.findFirst({where:{id:input.conversationId,userId:uid}}) : await prisma.conversation.create({data:{userId:uid,title:input.message.slice(0,80),model:input.model}}); if (!conversation) { res.status(404).json({error:{code:'CONVERSATION_NOT_FOUND',message:'Conversation not found.'}}); return; } const history=await prisma.message.findMany({where:{conversationId:conversation.id},orderBy:{createdAt:'asc'},take:40}); await prisma.message.create({data:{conversationId:conversation.id,role:'user',content:input.message}}); await prisma.conversation.update({where:{id:conversation.id},data:{updatedAt:new Date()}}); res.status(200); res.set({'Content-Type':'text/event-stream; charset=utf-8','Cache-Control':'no-cache, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no'}); res.flushHeaders(); res.write(`: conversation ${conversation.id}\n\n`); let closed=false; res.on('close',()=>{closed=!res.writableEnded;}); const emit=(event:unknown)=>{if(!closed)sse(res,event);};
   try { emit({type:'status',message:'Aira is working...'}); const model=input.model;
     let handled = false;
